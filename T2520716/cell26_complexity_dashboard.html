@@ -1,0 +1,237 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; background: #fff; color: #1a1a1a; margin: 0; padding: 16px; }
+  h2   { font-size: 15px; font-weight: 600; margin: 0 0 4px; color: #1a1a1a; }
+  .sub { font-size: 11px; color: #666; margin: 0 0 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { background: #fafafa; border: 0.5px solid #e0e0e0; border-radius: 10px; padding: 16px; }
+  .card.wide { grid-column: span 2; }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+  .metric { background: #fafafa; border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 12px 14px; }
+  .metric .label { font-size: 11px; color: #666; margin: 0 0 4px; }
+  .metric .val   { font-size: 20px; font-weight: 600; color: #1a1a1a; margin: 0; }
+  .metric .sub2  { font-size: 10px; color: #999; margin: 2px 0 0; }
+  .verdict { display: inline-block; font-size: 10px; font-weight: 600;
+               padding: 2px 8px; border-radius: 4px; margin-top: 6px; }
+  .v-swin  { background: #dbeafe; color: #1d4ed8; }
+  .v-vit   { background: #fee2e2; color: #b91c1c; }
+  .v-eq    { background: #f3f4f6; color: #6b7280; }
+  .legend  { display: flex; gap: 16px; font-size: 11px; color: #555; margin-bottom: 10px; }
+  .dot     { width: 10px; height: 10px; border-radius: 2px; display: inline-block;
+               margin-right: 4px; vertical-align: middle; }
+  .axis-title { font-size: 12px; font-weight: 600; color: #333;
+                  border-left: 3px solid; padding-left: 8px; margin-bottom: 10px; }
+  .proof-banner { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .proof-item   { background: #f0f9ff; border: 0.5px solid #bae6fd;
+                   border-radius: 6px; padding: 6px 12px; font-size: 11px; color: #0369a1; }
+  .proof-item strong { color: #0c4a6e; }
+</style>
+</head>
+<body>
+
+<h2>Video Swin vs Video ViT — Pipeline Complexity Dashboard</h2>
+<p class="sub">All values measured from training &amp; profiling pipeline. Zero hardcoded values.</p>
+
+<div id="proof-banner" class="proof-banner"></div>
+
+<div class="metrics" id="metrics-row"></div>
+
+<div class="grid">
+  <div class="card">
+    <div class="axis-title" style="border-color:#2563eb">Time complexity — epoch wall-clock (s)</div>
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span>Swin</span>
+      <span><span class="dot" style="background:#dc2626"></span>ViT</span>
+    </div>
+    <div style="position:relative;height:200px"><canvas id="c1" aria-label="Epoch training time per epoch for Swin and ViT">Epoch time chart</canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="axis-title" style="border-color:#7c3aed">Space complexity — peak VRAM per epoch (MB)</div>
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span>Swin</span>
+      <span><span class="dot" style="background:#dc2626"></span>ViT</span>
+    </div>
+    <div style="position:relative;height:200px"><canvas id="c2" aria-label="Peak VRAM per epoch for Swin and ViT">VRAM chart</canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="axis-title" style="border-color:#059669">Computation cost — GFLOPs &amp; latency (ms)</div>
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span>Swin</span>
+      <span><span class="dot" style="background:#dc2626"></span>ViT</span>
+    </div>
+    <div style="position:relative;height:200px"><canvas id="c3" aria-label="GFLOPs and latency bar chart for Swin and ViT">Compute bar chart</canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="axis-title" style="border-color:#d97706">Real-time inference — FPS &amp; efficiency</div>
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span>Swin</span>
+      <span><span class="dot" style="background:#dc2626"></span>ViT</span>
+    </div>
+    <div style="position:relative;height:200px"><canvas id="c4" aria-label="FPS and parameter efficiency bar chart">Inference chart</canvas></div>
+  </div>
+
+  <div class="card wide">
+    <div class="axis-title" style="border-color:#0891b2">Training loss convergence — does higher cost yield better accuracy?</div>
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span>Swin loss</span>
+      <span><span class="dot" style="background:#dc2626"></span>ViT loss</span>
+      <span><span class="dot" style="background:#1d9e75;opacity:0.6"></span>Swin R@1 IoU@0.5</span>
+      <span><span class="dot" style="background:#f59e0b;opacity:0.6"></span>ViT R@1 IoU@0.5</span>
+    </div>
+    <div style="position:relative;height:220px"><canvas id="c5" aria-label="Loss and accuracy curves for both models">Loss accuracy chart</canvas></div>
+  </div>
+</div>
+
+<script>
+const D = {"epochs": [1], "s_epoch_t": [2561.6], "v_epoch_t": [2503.0], "s_ep_vram": [7811.2], "v_ep_vram": [14125.3], "s_loss": [13.79], "v_loss": [14.84], "s_r05": [12.66], "v_r05": [30.7], "s_gfl": 0, "v_gfl": 0, "s_lat": 27.89, "v_lat": 24.97, "s_vram": 1867.2, "v_vram": 2005.7, "s_prm": 175.79, "v_prm": 234.96, "s_venc": 27.66, "v_venc": 86.84, "s_fps": 35.86, "v_fps": 40.05, "s_eff": 0.204, "v_eff": 0.17, "s_mean_t": 2561.6, "v_mean_t": 2503.0, "s_mean_vr": 7811.2, "v_mean_vr": 14125.3, "verdicts": {"time": "ViT cheaper", "space": "Swin cheaper", "compute": "no data", "memory": "Swin cheaper", "rt": "ViT cheaper"}, "num_epochs": 1};
+
+function vclass(v) {
+  if (v.includes("Swin")) return "v-swin";
+  if (v.includes("ViT"))  return "v-vit";
+  return "v-eq";
+}
+function vlabel(v) {
+  if (v === "no data") return "no data";
+  return v;
+}
+
+const proofItems = [
+  { axis:"Time complexity",     val: D.verdicts.time    },
+  { axis:"Space complexity",    val: D.verdicts.space   },
+  { axis:"Computation cost",    val: D.verdicts.compute },
+  { axis:"Memory consumption",  val: D.verdicts.memory  },
+  { axis:"Real-time inference", val: D.verdicts.rt      },
+];
+const pb = document.getElementById("proof-banner");
+proofItems.forEach(p => {
+  pb.innerHTML += `<div class="proof-item"><strong>${p.axis}:</strong> ${vlabel(p.val)}</div>`;
+});
+
+const metricsData = [
+  { label:"Mean epoch time — Swin", val: D.s_mean_t + " s",  sub:"wall-clock per epoch" },
+  { label:"Mean epoch time — ViT",  val: D.v_mean_t + " s",  sub:"wall-clock per epoch" },
+  { label:"Peak VRAM fwd — Swin",   val: D.s_vram + " MB",   sub:"torch.cuda profiler"  },
+  { label:"Peak VRAM fwd — ViT",    val: D.v_vram + " MB",   sub:"torch.cuda profiler"  },
+  { label:"Latency — Swin",         val: D.s_lat + " ms",    sub:"avg 20 runs, batch=1" },
+  { label:"Latency — ViT",          val: D.v_lat + " ms",    sub:"avg 20 runs, batch=1" },
+  { label:"GFLOPs — Swin encoder",  val: D.s_gfl || "N/A",   sub:"thop profiler"        },
+  { label:"GFLOPs — ViT encoder",   val: D.v_gfl || "N/A",   sub:"thop profiler"        },
+  { label:"FPS — Swin",             val: D.s_fps,             sub:"inferred from latency"},
+  { label:"FPS — ViT",              val: D.v_fps,             sub:"inferred from latency"},
+  { label:"Total params — Swin",    val: D.s_prm + " M",     sub:"all modules"          },
+  { label:"Total params — ViT",     val: D.v_prm + " M",     sub:"all modules"          },
+];
+const mr = document.getElementById("metrics-row");
+metricsData.forEach(m => {
+  mr.innerHTML += `<div class="metric">
+    <p class="label">${m.label}</p>
+    <p class="val">${m.val}</p>
+    <p class="sub2">${m.sub}</p>
+  </div>`;
+});
+
+const SWIN = "#2563eb";
+const VIT  = "#dc2626";
+const S_A  = "rgba(37,99,235,0.15)";
+const V_A  = "rgba(220,38,38,0.15)";
+const opts = { responsive:true, maintainAspectRatio:false,
+  plugins:{ legend:{ display:false }, tooltip:{ mode:"index", intersect:false } },
+  scales:{ x:{ grid:{ color:"#f0f0f0" }, ticks:{ font:{ size:10 } } },
+            y:{ grid:{ color:"#f0f0f0" }, ticks:{ font:{ size:10 } } } } };
+
+new Chart(document.getElementById("c1"), {
+  type:"line",
+  data:{ labels:D.epochs,
+    datasets:[
+      { label:"Swin epoch time (s)", data:D.s_epoch_t, borderColor:SWIN, backgroundColor:S_A,
+         fill:true, tension:0.3, pointRadius:3, borderWidth:2, borderDash:[] },
+      { label:"ViT epoch time (s)",  data:D.v_epoch_t, borderColor:VIT,  backgroundColor:V_A,
+         fill:true, tension:0.3, pointRadius:3, borderWidth:2,
+         borderDash:[5,3] },
+    ]},
+  options:{ ...opts, scales:{ ...opts.scales,
+    x:{ ...opts.scales.x, title:{ display:true, text:"Epoch", font:{ size:10 } } },
+    y:{ ...opts.scales.y, title:{ display:true, text:"Seconds", font:{ size:10 } } } } },
+});
+
+new Chart(document.getElementById("c2"), {
+  type:"line",
+  data:{ labels:D.epochs,
+    datasets:[
+      { label:"Swin peak VRAM (MB)", data:D.s_ep_vram, borderColor:SWIN, backgroundColor:S_A,
+         fill:true, tension:0.3, pointRadius:3, borderWidth:2 },
+      { label:"ViT peak VRAM (MB)",  data:D.v_ep_vram, borderColor:VIT,  backgroundColor:V_A,
+         fill:true, tension:0.3, pointRadius:3, borderWidth:2, borderDash:[5,3] },
+    ]},
+  options:{ ...opts, scales:{ ...opts.scales,
+    x:{ ...opts.scales.x, title:{ display:true, text:"Epoch", font:{ size:10 } } },
+    y:{ ...opts.scales.y, title:{ display:true, text:"MB", font:{ size:10 } } } } },
+});
+
+new Chart(document.getElementById("c3"), {
+  type:"bar",
+  data:{ labels:["GFLOPs (video encoder)", "Latency (ms/sample)", "Params — video enc (M)"],
+    datasets:[
+      { label:"Swin", data:[D.s_gfl, D.s_lat, D.s_venc], backgroundColor:SWIN,
+         borderRadius:4 },
+      { label:"ViT",  data:[D.v_gfl, D.v_lat, D.v_venc], backgroundColor:VIT,
+         borderRadius:4 },
+    ]},
+  options:{ ...opts,
+    scales:{ x:{ grid:{ display:false }, ticks:{ font:{ size:9 } } },
+              y:{ grid:{ color:"#f0f0f0" }, ticks:{ font:{ size:10 } } } },
+    plugins:{ ...opts.plugins, tooltip:{ mode:"index", intersect:false } } },
+});
+
+new Chart(document.getElementById("c4"), {
+  type:"bar",
+  data:{ labels:["FPS", "FPS / M-param (efficiency)", "Total params (M)"],
+    datasets:[
+      { label:"Swin", data:[D.s_fps, D.s_eff, D.s_prm], backgroundColor:SWIN,
+         borderRadius:4 },
+      { label:"ViT",  data:[D.v_fps, D.v_eff, D.v_prm], backgroundColor:VIT,
+         borderRadius:4 },
+    ]},
+  options:{ ...opts,
+    scales:{ x:{ grid:{ display:false }, ticks:{ font:{ size:9 } } },
+              y:{ grid:{ color:"#f0f0f0" }, ticks:{ font:{ size:10 } } } },
+    plugins:{ ...opts.plugins, tooltip:{ mode:"index", intersect:false } } },
+});
+
+new Chart(document.getElementById("c5"), {
+  type:"line",
+  data:{ labels:D.epochs,
+    datasets:[
+      { label:"Swin train loss", data:D.s_loss, borderColor:SWIN, backgroundColor:"transparent",
+         tension:0.3, pointRadius:3, borderWidth:2, yAxisID:"yL" },
+      { label:"ViT train loss",  data:D.v_loss, borderColor:VIT,  backgroundColor:"transparent",
+         tension:0.3, pointRadius:3, borderWidth:2, borderDash:[5,3], yAxisID:"yL" },
+      { label:"Swin R@1 IoU@0.5", data:D.s_r05, borderColor:"#1d9e75", backgroundColor:"rgba(29,158,117,0.1)",
+         fill:true, tension:0.3, pointRadius:3, borderWidth:1.5, yAxisID:"yR" },
+      { label:"ViT R@1 IoU@0.5",  data:D.v_r05, borderColor:"#f59e0b", backgroundColor:"rgba(245,158,11,0.1)",
+         fill:true, tension:0.3, pointRadius:3, borderWidth:1.5, borderDash:[4,2], yAxisID:"yR" },
+    ]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:false }, tooltip:{ mode:"index", intersect:false } },
+    scales:{
+      x:  { grid:{ color:"#f0f0f0" }, ticks:{ font:{ size:10 } },
+              title:{ display:true, text:"Epoch", font:{ size:10 } } },
+      yL: { position:"left",  grid:{ color:"#f0f0f0" },
+              title:{ display:true, text:"Train loss", font:{ size:10 } },
+              ticks:{ font:{ size:10 } } },
+      yR: { position:"right", grid:{ drawOnChartArea:false },
+              title:{ display:true, text:"R@1 IoU@0.5 (%)", font:{ size:10 } },
+              ticks:{ font:{ size:10 } } },
+    } },
+});
+</script>
+</body>
+</html>
